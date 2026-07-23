@@ -101,9 +101,9 @@ def get_all_urls(req: Request, db: Session = Depends(get_db)):
     return result
 
 
-@app.get("/{short_url}")
-def redirect_to_original(short_url: str, db: Session = Depends(get_db)):
-    url = db.query(UrlBase).filter(UrlBase.short_code == short_url).first()
+@app.get("/{short_code}")
+def redirect_to_original(short_code: str, db: Session = Depends(get_db)):
+    url = db.query(UrlBase).filter(UrlBase.short_code == short_code).first()
 
     if not url:
         raise HTTPException(status_code=404, detail="short code not found")
@@ -112,9 +112,9 @@ def redirect_to_original(short_url: str, db: Session = Depends(get_db)):
     
 
 
-@app.delete("/delete/{short_url}")
-def delete_url(short_url: str, db: Session = Depends(get_db)):
-    url_to_delete = db.query(UrlBase).filter(UrlBase.short_code == short_url).first()
+@app.delete("/delete/{short_code}")
+def delete_url(short_code: str, db: Session = Depends(get_db)):
+    url_to_delete = db.query(UrlBase).filter(UrlBase.short_code == short_code).first()
     if not url_to_delete:
         raise HTTPException(status_code=404, detail="Url not found")
     

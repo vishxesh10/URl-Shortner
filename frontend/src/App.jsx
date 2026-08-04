@@ -6,8 +6,10 @@ import AuthForm from "./Components/AuthForm";
 import Dashboard from "./Components/Dashboard";
 import AnalyticsView from "./Components/AnalyticsView";
 
-// API Base URL config (use proxy/local port in dev, same origin in prod)
-const API_BASE = import.meta.env.DEV ? "http://localhost:8000" : "";
+// API Base URL config (use proxy/local port in dev, fallback to live backend in prod)
+const API_BASE = import.meta.env.DEV 
+  ? "http://localhost:8000" 
+  : (import.meta.env.VITE_API_BASE || "https://url-shortner-u2wp.onrender.com");
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem("token") || "");

@@ -1,54 +1,29 @@
-from fastapi import FastAPI, Depends, HTTPException, Request
+import os
+from datetime import datetime, timezone
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+from fastapi import FastAPI, Depends, HTTPException, Request, BackgroundTasks, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, HttpUrl
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.orm import sessionmaker, Session, declarative_base
-from fastapi.responses import RedirectResponse
-import random, string
+from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
 
-Database_Url = "sqlite:///urls.db"
-engine = create_engine(Database_Url, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+from app.database import engine, get_db
+from app.models import Base, URL, ClickAnalytic
+from app.routes import auth, urls, analytics
 
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-class UrlBase(Base):
-    __tablename__ = "urls"
-    id = Column(Integer, primary_key=True, index=True)
-    original_url = Column(String, unique=True, nullable=False)
-    short_code = Column(String, unique=True, nullable=False, index=True)
-    
-        
+# Create database tables
 Base.metadata.create_all(bind=engine)
 
+app = FastAPI(
+    title="LinkShort API",
+    description="Secure URL Shortener with JWT Authentication, Custom Aliases, Expiration Dates, and Click Analytics.",
+    version="1.0.0"
+)
 
-class UrlReq(BaseModel):
-    original_url: HttpUrl
-
-
-class UrlRes(BaseModel):
-    original_url: str
-    short_code: str
-    short_url: str
-    
-    model_config = {
-        "from_attributes": True
-    }
-
-
-def generate_short_Code(length: int = 6):
-    return "".join(random.choices(string.ascii_letters + string.digits, k=length))
-
-
-app = FastAPI(title="URL Shortner API")
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -57,67 +32,122 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register routes
+app.include_router(auth.router, prefix="/api")
+app.include_router(urls.router, prefix="/api")
+app.include_router(analytics.router, prefix="/api")
 
-@app.post("/shorten", response_model=UrlRes, status_code=201)
-def create_short_url(request: UrlReq, req: Request, db: Session = Depends(get_db)):
-    original_url = str(request.original_url)
+# Background task for analytics recording (prevents blocking redirects)
+def log_click_event(url_id: int, ip_address: str, user_agent: str, referrer: str):
+    from app.database import SessionLocal
+    db = SessionLocal()
+    try:
+        browser, os_name = "Unknown", "Unknown"
+        if user_agent:
+            ua_lower = user_agent.lower()
+            if "chrome" in ua_lower or "crios" in ua_lower:
+                browser = "Chrome"
+            elif "firefox" in ua_lower or "fxios" in ua_lower:
+                browser = "Firefox"
+            elif "safari" in ua_lower and "chrome" not in ua_lower:
+                browser = "Safari"
+            elif "edge" in ua_lower or "edg" in ua_lower:
+                browser = "Edge"
+            
+            if "windows" in ua_lower:
+                os_name = "Windows"
+            elif "macintosh" in ua_lower or "mac os" in ua_lower:
+                os_name = "macOS"
+            elif "iphone" in ua_lower or "ipad" in ua_lower:
+                os_name = "iOS"
+            elif "android" in ua_lower:
+                os_name = "Android"
+            elif "linux" in ua_lower:
+                os_name = "Linux"
 
-    existing = db.query(UrlBase).filter(UrlBase.original_url == original_url).first()
+        click = ClickAnalytic(
+            url_id=url_id,
+            ip_address=ip_address,
+            user_agent=user_agent[:255] if user_agent else None,
+            browser=browser,
+            os=os_name,
+            referrer=referrer[:255] if referrer else None
+        )
+        db.add(click)
+        db.commit()
+    except Exception as e:
+        print(f"Error logging click event: {e}")
+        db.rollback()
+    finally:
+        db.close()
 
-    if existing:
-        return {
-            "original_url": existing.original_url,
-            "short_code": existing.short_code,
-            "short_url": f"{req.base_url}{existing.short_code}"
-        }
-    
-    # generate new short code
-    short_code = generate_short_Code()
-    while db.query(UrlBase).filter(UrlBase.short_code == short_code).first():
-        short_code = generate_short_Code()
-    new_url = UrlBase(original_url=original_url, short_code=short_code)
-    db.add(new_url)
-    db.commit()
-    db.refresh(new_url)
+static_dir = "static"
 
-    return {
-        "original_url": new_url.original_url,
-        "short_code": new_url.short_code,
-        "short_url": f"{req.base_url}{new_url.short_code}"
-    }
-    
-
-
-@app.get("/all", response_model=list[UrlRes])
-def get_all_urls(req: Request, db: Session = Depends(get_db)):
-    urls = db.query(UrlBase).all()
-    result = []
-    for url in urls:
-        result.append({
-            "original_url": url.original_url,
-            "short_code": url.short_code,
-            "short_url": f"{req.base_url}{url.short_code}"
-        })
-    return result
-
-
+# Redirection handler
 @app.get("/{short_code}")
-def redirect_to_original(short_code: str, db: Session = Depends(get_db)):
-    url = db.query(UrlBase).filter(UrlBase.short_code == short_code).first()
+def redirect_to_original(
+    short_code: str, 
+    request: Request,
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_db)
+):
+    # Serve root-level frontend static files if they exist (e.g. favicon.ico, logo.png)
+    static_file_path = os.path.join(static_dir, short_code)
+    if os.path.exists(static_file_path) and os.path.isfile(static_file_path):
+        return FileResponse(static_file_path)
+
+    # Skip standard asset calls or frontend files that might hit redirection if not found
+    if short_code in ["favicon.ico", "robots.txt", "sitemap.xml", "assets", "api", "docs", "redoc", "openapi.json"]:
+        raise HTTPException(status_code=404, detail="Not Found")
+        
+    url = db.query(URL).filter(URL.short_code == short_code).first()
 
     if not url:
-        raise HTTPException(status_code=404, detail="short code not found")
+        # Return a beautiful 404 HTML page or JSON
+        raise HTTPException(status_code=404, detail="Short URL not found or has been deleted.")
 
-    return RedirectResponse(url=url.original_url, status_code=302)
-    
+    # Expiration check
+    if url.expires_at:
+        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+        if url.expires_at < now_naive:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE, 
+                detail="This short link has expired."
+            )
 
+    # Capture metadata
+    ip_address = request.client.host if request.client else "Unknown"
+    # Support headers for reverse proxies (Render, Cloudflare, etc.)
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    if forwarded_for:
+        ip_address = forwarded_for.split(",")[0].strip()
+        
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    referrer = request.headers.get("Referer", "Direct")
 
-@app.delete("/delete/{short_code}")
-def delete_url(short_code: str, db: Session = Depends(get_db)):
-    url_to_delete = db.query(UrlBase).filter(UrlBase.short_code == short_code).first()
-    if not url_to_delete:
-        raise HTTPException(status_code=404, detail="Url not found")
-    
-    db.delete(url_to_delete)
-    db.commit()
-    return {"message": "Url deleted successfully"}
+    # Queue background task to record analytics
+    background_tasks.add_task(log_click_event, url.id, ip_address, user_agent, referrer)
+
+    return RedirectResponse(url=url.original_url, status_code=status.HTTP_302_FOUND)
+
+# Serve Frontend static build files in production
+if os.path.exists(static_dir):
+    # Mount frontend static assets folder
+    assets_dir = os.path.join(static_dir, "assets")
+    if os.path.exists(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+        
+    @app.get("/")
+    def serve_frontend_root():
+        index_path = os.path.join(static_dir, "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+        return {"message": "LinkShort API is running, but static/index.html is missing."}
+else:
+    @app.get("/")
+    def api_root():
+        return {
+            "message": "Welcome to LinkShort API!",
+            "documentation": "/docs",
+            "status": "online"
+        }

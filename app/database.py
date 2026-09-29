@@ -8,8 +8,11 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./urls.db")
 
 # Normalize older PostgreSQL URLs that use the deprecated postgres:// scheme
+# and explicitly specify the psycopg2 driver to avoid psycopg (v3) conflicts
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 # Handle SQLite vs PostgreSQL configurations
 if DATABASE_URL.startswith("sqlite"):

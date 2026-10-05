@@ -61,8 +61,18 @@ const Dashboard = ({ token, onViewAnalytics, API_BASE }) => {
       }
 
       if (expiresAt) {
-        // Convert to ISO string with timezone info
-        payload.expires_at = new Date(expiresAt).toISOString();
+        // datetime-local gives local time string; new Date() parses it as local
+        // and toISOString() correctly converts to UTC with Z suffix for the backend
+        const expiresDate = new Date(expiresAt);
+        if (isNaN(expiresDate.getTime())) {
+          setError("Invalid expiration date.");
+          return;
+        }
+        if (expiresDate <= new Date()) {
+          setError("Expiration date must be in the future.");
+          return;
+        }
+        payload.expires_at = expiresDate.toISOString();
       }
 
       const res = await fetch(`${API_BASE}/api/urls/shorten`, {

@@ -50,14 +50,18 @@ def create_short_url(
 
     # Expiration date check
     if payload.expires_at:
-        # Convert timezone-aware datetimes to naive UTC for db storing consistency or compare properly
-        expires_naive = payload.expires_at.replace(tzinfo=None)
-        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
-        if expires_naive <= now_naive:
+        # Ensure we have a timezone-aware datetime for comparison
+        expires_aware = payload.expires_at
+        if expires_aware.tzinfo is None:
+            # Treat naive datetime as UTC
+            expires_aware = expires_aware.replace(tzinfo=timezone.utc)
+        if expires_aware <= datetime.now(timezone.utc):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Expiration date must be in the future."
             )
+        # Store as naive UTC in the database
+        expires_naive = expires_aware.astimezone(timezone.utc).replace(tzinfo=None)
     else:
         expires_naive = None
 

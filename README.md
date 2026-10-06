@@ -1,138 +1,248 @@
-# LinkShort – Secure URL Shortener & Click Analytics
+# 🔗 LinkShort — URL Shortener
 
-LinkShort is a self-contained, secure URL shortening service built with **FastAPI**, **PostgreSQL/SQLite**, **SQLAlchemy**, and **React**. It features JSON Web Token (JWT) Authentication, custom alias selection, automated link expiration, and an interactive click analytics dashboard.
+A full-stack URL shortener web application built with **FastAPI** (Python backend) and **React** (frontend). It supports user authentication, custom short codes, link expiration, and detailed click analytics.
 
----
-
-## Key Features
-
-- 🔐 **Secure JWT Authentication**: Sign up and login flow to own, manage, and delete links.
-- 🔗 **Custom Short URLs**: Members can choose custom aliases (e.g., `linkshort.com/my-portfolio`) instead of randomly generated hashes.
-- ⏳ **Automated URL Expiration**: Set an optional datetime expiration constraint on short links. Expired links automatically return `410 Gone`.
-- 📈 **Interactive Click Analytics**: A custom SVG-rendered history chart, plus browser, operating system (OS), and referrer distribution tracking.
-- ⚡ **Background Tracking**: Click analysis is processed asynchronously using FastAPI `BackgroundTasks` to avoid slowing down redirect speeds.
-- 🐳 **Dockerized Stack**: Serves backend and compiled frontend React assets in a single container or runs multi-container setups using PostgreSQL.
-- 🚀 **One-Click Deploy**: Production-ready deployment template configuration (`render.yaml`) for Render.
+> **Live Demo:** [https://url-shortner-u2wp.onrender.com](https://url-shortner-u2wp.onrender.com)
 
 ---
 
-## Tech Stack
+## ✨ Features
 
-- **Backend**: Python 3.11+, FastAPI, SQLAlchemy, Pydantic, Passlib (bcrypt), python-jose (JWT)
-- **Database**: PostgreSQL (Production) / SQLite (Local Development fallback)
-- **Frontend**: React, Vite, Tailwind CSS (v4)
-- **Containerization & Hosting**: Docker, Docker Compose, Render
+- 🔐 **JWT Authentication** — Register and log in with secure token-based auth (24-hour sessions)
+- 🔗 **URL Shortening** — Shorten any long URL instantly (works without login too)
+- ✏️ **Custom Aliases** — Choose your own short code (e.g. `/my-brand`) — requires login
+- ⏰ **Link Expiration** — Set an expiry date for any short link — requires login
+- 📊 **Click Analytics** — Track clicks per link with breakdown by browser, OS, referrer, and time
+- 🗑️ **Link Management** — View and delete your created links from a personal dashboard
+- 🐳 **Docker Ready** — One-command deployment with Docker Compose (includes PostgreSQL)
+- ☁️ **Render Deployment** — Pre-configured `render.yaml` for one-click cloud deploy
 
 ---
 
-## Project Structure
+## 🏗️ Project Structure
 
 ```
 URL Shortner/
-├── app/                        # Python backend application package
-│   ├── database.py             # SQLAlchemy session and engine initialization
-│   ├── models.py               # Database schemas (User, URL, ClickAnalytic)
-│   ├── schemas.py              # Pydantic validation schemas
-│   ├── auth.py                 # Password hashing & JWT dependencies
-│   └── routes/                 # Endpoint routers
-│       ├── auth.py             # User signup, login, profile (/api/auth)
-│       ├── urls.py             # URL shortening, listing, deleting (/api/urls)
-│       └── analytics.py        # Analytics reports (/api/analytics)
-├── frontend/                   # React frontend application
+├── main.py                  # FastAPI app entry point + redirect handler
+├── app/
+│   ├── database.py          # SQLAlchemy engine + session setup (SQLite / PostgreSQL)
+│   ├── models.py            # Database models: User, URL, ClickAnalytic
+│   ├── schemas.py           # Pydantic request/response schemas
+│   ├── auth.py              # JWT creation, password hashing, auth dependencies
+│   └── routes/
+│       ├── auth.py          # /api/auth — register, login, /me
+│       ├── urls.py          # /api/urls — shorten, list, delete
+│       └── analytics.py     # /api/analytics — per-link click stats
+├── frontend/
 │   ├── src/
-│   │   ├── Components/
-│   │   │   ├── Header.jsx      # Navigation header
-│   │   │   ├── Content.jsx     # Guest landing page
-│   │   │   ├── AuthForm.jsx    # Glassmorphism signup/signin form
-│   │   │   ├── Dashboard.jsx   # Member home, creation, lists
-│   │   │   └── AnalyticsView.jsx # Detailed SVG charts & click logs
-│   │   ├── App.jsx             # State router & auth initializer
-│   │   ├── App.css             # Tailwind v4 entrypoint
-│   │   └── main.jsx            # React root mount
-│   ├── index.html              # Frontend page template (SEO configured)
-│   └── package.json            # Frontend dependency specifications
-├── main.py                     # Entrypoint & redirection middleware
-├── Dockerfile                  # Multi-stage Docker builder (Node build -> Python runner)
-├── docker-compose.yml          # Multi-container local stack config
-├── render.yaml                 # Render Blueprint deployment script
-└── pyproject.toml              # Python project metadata & requirements
+│   │   ├── App.jsx          # Root component — routing between pages
+│   │   └── Components/
+│   │       ├── Header.jsx       # Top navigation bar
+│   │       ├── Content.jsx      # Landing page with URL shortener form
+│   │       ├── AuthForm.jsx     # Login / Register form
+│   │       ├── Dashboard.jsx    # User's link management dashboard
+│   │       └── AnalyticsView.jsx # Detailed analytics page per link
+│   └── vite.config.js       # Vite dev server config
+├── Dockerfile               # Multi-stage build (React → static, then FastAPI)
+├── docker-compose.yml       # Local dev with PostgreSQL
+├── render.yaml              # Render.com one-click deploy config
+├── pyproject.toml           # Python project metadata + dependencies
+├── requirements.txt         # Python package requirements
+└── .env.example             # Environment variable template
 ```
 
 ---
 
-## Local Setup & Run
+## 🗄️ Database Models
 
-### Method 1: Docker Compose (Recommended)
-This runs the complete app with a PostgreSQL database in Docker containers.
+### `User`
+| Column            | Type        | Description                         |
+|-------------------|-------------|-------------------------------------|
+| `id`              | Integer PK  | Auto-incremented primary key        |
+| `username`        | String(50)  | Unique username                     |
+| `email`           | String(100) | Unique email address                |
+| `hashed_password` | String(255) | bcrypt-hashed password              |
+| `created_at`      | DateTime    | Account creation timestamp (UTC)    |
 
-1. Ensure you have **Docker** and **Docker Compose** installed.
-2. Run:
-   ```bash
-   docker compose up --build
-   ```
-3. Open your browser and navigate to `http://localhost:8000`.
+### `URL`
+| Column         | Type        | Description                                        |
+|----------------|-------------|----------------------------------------------------|
+| `id`           | Integer PK  | Auto-incremented primary key                       |
+| `original_url` | Text        | The full original URL                              |
+| `short_code`   | String(50)  | Unique short code (random 6-char or custom alias)  |
+| `created_at`   | DateTime    | Creation timestamp (UTC)                           |
+| `expires_at`   | DateTime    | Optional expiry (null = never expires)             |
+| `user_id`      | FK → users  | Owner (null for anonymous/guest links)             |
 
-### Method 2: Manual Local Running (SQLite)
-This runs the backend with SQLite and the frontend with the Vite dev server.
-
-#### 1. Running the Backend:
-1. Navigate to the root directory.
-2. Activate your virtual environment and install packages:
-   ```bash
-   .venv\Scripts\activate    # Windows
-   pip install .
-   ```
-3. Run the uvicorn development server:
-   ```bash
-   uvicorn main:app --reload --port 8000
-   ```
-   *The Swagger API documentation is available at `http://localhost:8000/docs`.*
-
-#### 2. Running the Frontend:
-1. Navigate to the `frontend/` folder:
-   ```bash
-   cd frontend
-   ```
-2. Install Node dependencies:
-   ```bash
-   npm install
-   ```
-3. Run the Vite development server:
-   ```bash
-   npm run dev
-   ```
-4. Open `http://localhost:5173` in your browser. (Vite will proxy API requests to `http://localhost:8000`).
+### `ClickAnalytic`
+| Column       | Type       | Description                         |
+|--------------|------------|-------------------------------------|
+| `id`         | Integer PK | Auto-incremented primary key        |
+| `url_id`     | FK → urls  | Which URL was clicked               |
+| `clicked_at` | DateTime   | Click timestamp (UTC)               |
+| `ip_address` | String(45) | Visitor IP (supports IPv6)          |
+| `user_agent` | Text       | Raw User-Agent header               |
+| `browser`    | String(50) | Parsed browser (Chrome, Firefox...) |
+| `os`         | String(50) | Parsed OS (Windows, macOS, iOS...)  |
+| `referrer`   | Text       | HTTP Referer header                 |
 
 ---
 
-## Production Deployment on Render
+## 🔌 API Endpoints
 
-You can easily deploy LinkShort to Render using the preconfigured [render.yaml](file:///c:/Users/vishe/OneDrive/Desktop/URL%20Shortner/render.yaml) blueprint:
+### Authentication — `/api/auth`
+| Method | Endpoint             | Auth Required | Description             |
+|--------|----------------------|---------------|-------------------------|
+| POST   | `/api/auth/register` | No            | Create a new account    |
+| POST   | `/api/auth/login`    | No            | Login and get JWT token |
+| GET    | `/api/auth/me`       | Yes           | Get current user info   |
 
-1. Push this code repository to your GitHub account.
-2. In the Render Dashboard, click **New** and select **Blueprint**.
-3. Select this repository.
-4. Render will automatically provision:
-   - A **PostgreSQL database**.
-   - A **Web Service** running the Docker container.
-   - All connection strings (`DATABASE_URL`) and authorization keys (`JWT_SECRET_KEY`) will link automatically.
+### URL Operations — `/api/urls`
+| Method | Endpoint                        | Auth Required | Description                                        |
+|--------|---------------------------------|---------------|----------------------------------------------------|
+| POST   | `/api/urls/shorten`             | Optional      | Shorten a URL (custom alias/expiry needs auth)     |
+| GET    | `/api/urls/my`                  | Yes           | Get all URLs created by the logged-in user         |
+| DELETE | `/api/urls/delete/{short_code}` | Yes           | Delete a specific short URL (owner only)           |
+
+### Analytics — `/api/analytics`
+| Method | Endpoint                      | Auth Required | Description                             |
+|--------|-------------------------------|---------------|-----------------------------------------|
+| GET    | `/api/analytics/{short_code}` | Yes           | Get detailed click analytics for a URL |
+
+### Redirect — Root level
+| Method | Endpoint        | Description                                      |
+|--------|-----------------|--------------------------------------------------|
+| GET    | `/{short_code}` | Redirect to the original URL (records analytics) |
+
+> 📖 Interactive API docs available at: `http://localhost:8000/docs`
 
 ---
 
-## API Endpoints
+## ⚙️ Tech Stack
 
-### Authentication (`/api/auth`)
-- `POST /api/auth/register` - Registers a new user.
-- `POST /api/auth/login` - Authenticates user credentials (using standard OAuth2 form) and returns a JWT access token.
-- `GET /api/auth/me` - Retrieves the authenticated user's profile details.
+| Layer     | Technology                                      |
+|-----------|-------------------------------------------------|
+| Backend   | Python 3.11, FastAPI, SQLAlchemy, Uvicorn       |
+| Auth      | JWT (python-jose), bcrypt (passlib)             |
+| Database  | SQLite (dev) / PostgreSQL (production)          |
+| Frontend  | React 18, Vite, TailwindCSS                     |
+| Deploy    | Docker, Docker Compose, Render.com              |
 
-### URL Operations (`/api/urls`)
-- `POST /api/urls/shorten` - Shortens a long URL. Supports optional `custom_code` and `expires_at` parameters (requires authentication to use custom codes/expiration).
-- `GET /api/urls/my` - Returns all short links created by the current logged-in user.
-- `DELETE /api/urls/delete/{short_code}` - Deletes a short link. Only the owner can delete their URLs.
+---
 
-### Analytics (`/api/analytics`)
-- `GET /api/analytics/{short_code}` - Returns detailed redirection data, clicks aggregated by date, referrers, browsers, and OS systems (requires ownership).
+## 🚀 Local Setup
 
-### Redirection
-- `GET /{short_code}` - Performs a standard `302 Found` redirection to the original destination and logs analytics in the background. If expired, returns a `410 Gone` error.
+### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- Git
+
+---
+
+### Option 1 — Run Backend + Frontend Separately (Recommended for Development)
+
+#### 1. Clone the repository
+```bash
+git clone https://github.com/vishxesh10/URl-Shortner.git
+cd "URL Shortner"
+```
+
+#### 2. Set up environment variables
+```bash
+cp .env.example .env
+```
+Edit `.env` and fill in your values:
+```env
+DATABASE_URL=sqlite:///./urls.db      # SQLite for local dev
+JWT_SECRET_KEY=your-secret-key-here
+```
+
+#### 3. Install Python dependencies
+```bash
+pip install -r requirements.txt
+```
+
+#### 4. Start the backend server
+```bash
+uvicorn main:app --reload --port 8000
+```
+Backend runs at: `http://localhost:8000`  
+API Docs: `http://localhost:8000/docs`
+
+#### 5. Install and start the frontend
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Frontend runs at: `http://localhost:5173`
+
+---
+
+### Option 2 — Docker Compose (Full Stack with PostgreSQL)
+
+```bash
+docker-compose up --build
+```
+
+This starts:
+- `linkshort-web` — FastAPI + React served on port `8000`
+- `linkshort-db` — PostgreSQL 15 database
+
+App available at: `http://localhost:8000`
+
+---
+
+## ☁️ Deploy to Render (Free)
+
+This project includes a `render.yaml` for one-click deployment to [Render.com](https://render.com).
+
+1. Fork this repository on GitHub
+2. Go to [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint**
+3. Connect your GitHub repo
+4. Render will automatically:
+   - Provision a free PostgreSQL database (`linkshort-db`)
+   - Build the Docker image (React frontend + FastAPI backend)
+   - Set all required environment variables (including auto-generating `JWT_SECRET_KEY`)
+   - Deploy the service
+
+---
+
+## 🔐 Environment Variables
+
+| Variable         | Required | Description                                       | Default               |
+|------------------|----------|---------------------------------------------------|-----------------------|
+| `DATABASE_URL`   | Yes      | Database connection string                        | `sqlite:///./urls.db` |
+| `JWT_SECRET_KEY` | Yes      | Secret key for signing JWT tokens (keep private!) | fallback dev key      |
+
+> ⚠️ **Never commit your real `.env` file.** Use `.env.example` as a template only.
+
+---
+
+## 🧠 How It Works
+
+1. **User visits the app** → React frontend loads and checks for a saved JWT token
+2. **Shorten a URL** → Frontend calls `POST /api/urls/shorten` → Backend generates a 6-character random code (or uses your custom alias) → Returns the short URL
+3. **Someone clicks the short link** → Request hits `GET /{short_code}` on the backend → Checks if the URL exists and hasn't expired → Records click analytics **in the background** (non-blocking, so redirect is instant) → Redirects the user to the original URL (`HTTP 302`)
+4. **View analytics** → Frontend calls `GET /api/analytics/{short_code}` → Returns aggregated data: clicks over time, browser breakdown, OS breakdown, referrer sources
+
+---
+
+## 📦 Key Dependencies
+
+| Package          | Purpose                                         |
+|------------------|-------------------------------------------------|
+| `fastapi`        | Web framework for building the REST API         |
+| `sqlalchemy`     | ORM for database access                         |
+| `uvicorn`        | ASGI server to run FastAPI                      |
+| `python-jose`    | JWT token encoding and decoding                 |
+| `bcrypt/passlib` | Secure password hashing                         |
+| `psycopg2-binary`| PostgreSQL database adapter                     |
+| `python-dotenv`  | Load environment variables from `.env` file     |
+| `email-validator`| Email format validation for user registration   |
+
+---
+
+## 📄 License
+
+This project is open source. Feel free to use, fork, and modify it.
